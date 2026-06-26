@@ -350,28 +350,6 @@ pub fn annuler_score_rencontre(conn: &Connection, rencontre_id: i64) -> Result<(
     Ok(())
 }
 
-/// Renvoie toutes les rencontres (hors exemptes) impliquant une équipe,
-/// pour vérifier l'anti-doublon lors du tirage.
-pub fn rencontres_precedentes(
-    conn: &Connection,
-    concours_id: i64,
-    equipe_id: i64,
-) -> Result<Vec<(i64, i64)>> {
-    // Retourne des paires (equipe_a_id, equipe_b_id)
-    let mut stmt = conn.prepare(
-        "SELECT r.equipe_a_id, r.equipe_b_id
-         FROM rencontres r
-         JOIN tours t ON t.id = r.tour_id
-         WHERE t.concours_id = ?1
-           AND r.exempte = 0
-           AND (r.equipe_a_id = ?2 OR r.equipe_b_id = ?2)",
-    )?;
-    let rows = stmt.query_map(params![concours_id, equipe_id], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    rows.collect()
-}
-
 pub fn tous_resultats_saisis(conn: &Connection, tour_id: i64) -> Result<bool> {
     let nb_restants: i64 = conn.query_row(
         "SELECT COUNT(*) FROM rencontres

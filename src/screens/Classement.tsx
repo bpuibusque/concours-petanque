@@ -31,7 +31,12 @@ export default function Classement() {
     if (rang === 1) return '🥇';
     if (rang === 2) return '🥈';
     if (rang === 3) return '🥉';
-    return rang;
+    return String(rang);
+  }
+
+  function rangClass(rang: number) {
+    if (rang <= 3) return `rang-top rang-${rang}`;
+    return '';
   }
 
   return (
@@ -39,7 +44,7 @@ export default function Classement() {
       <div className="flex-between page-header">
         <div>
           <h1>Classement général</h1>
-          <p>Mis à jour en temps réel à chaque score validé</p>
+          <p>Tri : parties gagnées · goal average · points marqués bruts</p>
         </div>
         <button className="btn btn-ghost" onClick={charger} disabled={loading}>
           {loading ? 'Chargement…' : '↺ Actualiser'}
@@ -47,7 +52,6 @@ export default function Classement() {
       </div>
 
       {erreur && <div className="alert alert-err">{erreur}</div>}
-
       {!loading && lignes.length === 0 && (
         <div className="alert alert-warn">Aucun résultat encore saisi.</div>
       )}
@@ -58,32 +62,34 @@ export default function Classement() {
             <table>
               <thead>
                 <tr>
-                  <th>Rang</th>
-                  <th>Équipe</th>
-                  <th className="td-num">V</th>
-                  <th className="td-num">G.A.</th>
-                  <th className="td-num">Pour</th>
-                  <th className="td-num">Contre</th>
+                  <th style={{ width: 50 }} className="td-center">Rang</th>
+                  <th>Équipe / Joueurs</th>
+                  <th style={{ width: 50 }} className="td-center" title="Parties gagnées">V</th>
+                  <th style={{ width: 70 }} className="td-center" title="Goal average (marqués − encaissés)">G.A.</th>
+                  <th style={{ width: 60 }} className="td-center" title="Points marqués">Pour</th>
+                  <th style={{ width: 60 }} className="td-center" title="Points encaissés">Contre</th>
                 </tr>
               </thead>
               <tbody>
                 {lignes.map(l => (
-                  <tr key={l.equipe_id} className={l.rang === 1 ? 'rang-1' : ''}>
-                    <td className="td-center" style={{ fontWeight: 700 }}>{rangLabel(l.rang)}</td>
-                    <td style={{ fontWeight: l.rang <= 3 ? 700 : 400 }}>
-                      {l.equipe_nom}
+                  <tr key={l.equipe_id} className={rangClass(l.rang)}>
+                    <td className="td-center rang-cell" style={{ fontWeight: 700, fontSize: l.rang <= 3 ? 16 : 13 }}>
+                      {rangLabel(l.rang)}
+                    </td>
+                    <td>
+                      <span style={{ fontWeight: l.rang <= 3 ? 700 : 600 }}>{l.equipe_nom}</span>
                       {l.joueurs.length > 0 && (
-                        <span className="text-muted" style={{ fontWeight: 400, marginLeft: 6 }}>
-                          · {l.joueurs.join(' · ')}
-                        </span>
+                        <span className="td-joueurs"> · {l.joueurs.join(' · ')}</span>
                       )}
                     </td>
-                    <td className="td-num" style={{ fontWeight: 700 }}>{l.parties_gagnees}</td>
-                    <td className={`td-num ${gaClass(l.goal_average)}`}>
+                    <td className="td-center" style={{ fontWeight: 700, fontSize: 15 }}>
+                      {l.parties_gagnees}
+                    </td>
+                    <td className={`td-center ${gaClass(l.goal_average)}`}>
                       {l.goal_average > 0 ? '+' : ''}{l.goal_average}
                     </td>
-                    <td className="td-num">{l.points_marques}</td>
-                    <td className="td-num">{l.points_encaisses}</td>
+                    <td className="td-center text-muted">{l.points_marques}</td>
+                    <td className="td-center text-muted">{l.points_encaisses}</td>
                   </tr>
                 ))}
               </tbody>
@@ -91,10 +97,6 @@ export default function Classement() {
           </div>
         </div>
       )}
-
-      <div className="text-muted text-sm mt-8">
-        Critères : victoires · goal average (marqués − encaissés) · points marqués bruts
-      </div>
     </div>
   );
 }

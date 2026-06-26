@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/invoke';
 import type { Concours, RencontreDetail, TirageInfo, Tour } from '../lib/types';
 
@@ -8,10 +8,7 @@ interface Props {
   onTourSuivantTire: () => void;
 }
 
-interface ScoreLocal {
-  a: string;
-  b: string;
-}
+interface ScoreLocal { a: string; b: string; }
 
 export default function Saisie({ tourId: initTourId, concours, onTourSuivantTire }: Props) {
   const [tours, setTours] = useState<Tour[]>([]);
@@ -21,6 +18,9 @@ export default function Saisie({ tourId: initTourId, concours, onTourSuivantTire
   const [erreur, setErreur] = useState('');
   const [saving, setSaving] = useState<number | null>(null);
   const [tirageSuivant, setTirageSuivant] = useState(false);
+
+  // Ref map pour le focus automatique entre inputs
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const chargerTours = useCallback(async () => {
     const ts = await api.listTours();
@@ -53,16 +53,15 @@ export default function Saisie({ tourId: initTourId, concours, onTourSuivantTire
   useEffect(() => { chargerTours(); }, [chargerTours]);
   useEffect(() => { if (tourSelId) chargerRencontres(tourSelId); }, [tourSelId, chargerRencontres]);
 
-  // Score auto-fill : si on tape X ≠ 13 pour un côté, l'autre prend 13
   function setScore(id: number, side: 'a' | 'b', val: string) {
-    if (val !== '' && !/^\d{0,2}$/.test(val)) return; // max 2 chiffres
+    if (val !== '' && !/^\d{0,2}$/.test(val)) return;
     setScores(prev => {
       const current = prev[id] ?? { a: '', b: '' };
       const n = parseInt(val, 10);
       const autre: 'a' | 'b' = side === 'a' ? 'b' : 'a';
-      // Auto-fill 13 côté adverse si score saisi < 13
       const newScore: ScoreLocal = { ...current, [side]: val };
-      if (!isNaN(n) && n < 13 && val !== '') {
+      // Auto-fill côté adverse à 13 si score saisi < 13
+      if (!isNaN(n) && n < 13 && val !== '' && current[autre] === '') {
         newScore[autre] = '13';
       }
       return { ...prev, [id]: newScore };
@@ -74,7 +73,7 @@ export default function Saisie({ tourId: initTourId, concours, onTourSuivantTire
     if (!s || s.a === '' || s.b === '') { setErreur('Saisissez les deux scores.'); return; }
     const sa = parseInt(s.a, 10);
     const sb = parseInt(s.b, 10);
-    if (sa === sb) { setErreur('Match nul impossible en pétanque.'); return; }
+    if (sa === sb) { setErreur('Égalité impossible en pétanque.'); return; }
     setSaving(r.id);
     setErreur('');
     try {
@@ -119,8 +118,9 @@ export default function Saisie({ tourId: initTourId, concours, onTourSuivantTire
   const tousJoues = total > 0 && jouees === total;
   const tourCourant = tours.find(t => t.id === tourSelId);
   const tourNumero = tourCourant?.numero ?? 0;
-  const dernierTour = tours.length > 0 && tours[tours.length - 1].numero === concours.nb_tours;
-  const peutPasserSuivant = tousJoues && !dernierTour;
+  const estDernierTour = tours.length > 0 && tours[tours.length - 1].numero === concours.nb_tours;
+  const peutPasserSuivant = tousJoues && !estDernierTour && tourCourant?.statut === 'ouvert';
+  const concoursFini = tousJoues && estDernierTour;
 
   return (
     <div className="page">
@@ -128,35 +128,33 @@ export default function Saisie({ tourId: initTourId, concours, onTourSuivantTire
         <div>
           <h1>Saisie des scores</h1>
           <p>
-            Tour {tourNumero} · {jouees}/{total} validé{jouees > 1 ? 's' : ''}
+            Tour {tourNumero} · {jouees}/{total} rencontre{jouees !== 1 ? 's' : ''} validée{jouees !== 1 ? 's' : ''}
           </p>
-          <div className="progress-bar" style={{ width: 200, marginTop: 6 }}>
+          <div className="progress-bar" style={{ width: 200, marginTop: 5 }}>
             <div className="progress-fill" style={{ width: `${total ? jouees / total * 100 : 0}%` }} />
           </div>
         </div>
-        {peutPasserSuivant && (
-          <button
-            className="btn btn-primary btn-lg"
-            disabled={tirageSuivant}
-            onClick={passerTourSuivant}
-          >
-            {tirageSuivant ? 'Tirage…' : `Passer au tour ${tourNumero + 1} →`}
-          </button>
-        )}
-        {tousJoues && dernierTour && (
-          <span className="badge badge-ok" style={{ fontSize: 13, padding: '8px 14px' }}>
-            Concours terminé — voir le classement
-          </span>
-        )}
+        <div className="flex-row">
+          {peutPasserSuivant && (
+            <button className="btn btn-primary btn-lg" disabled={tirageSuivant} onClick={passerTourSuivant}>
+              {tirageSuivant ? 'Tirage…' : `Passer au tour ${tourNumero + 1} →`}
+            </button>
+          )}
+          {concoursFini && (
+            <span className="badge badge-ok" style={{ fontSize: 12, padding: '8px 14px' }}>
+              Concours terminé — consultez le classement
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Onglets tours */}
       {tours.length > 1 && (
-        <div className="flex-row mb-8">
+        <div className="tour-tabs">
           {tours.map(t => (
             <button
               key={t.id}
-              className={`btn btn-sm ${t.id === tourSelId ? 'btn-primary' : 'btn-ghost'}`}
+              className={`tour-tab ${t.id === tourSelId ? 'active' : ''}`}
               onClick={() => setTourSelId(t.id)}
             >
               Tour {t.numero}
@@ -166,84 +164,136 @@ export default function Saisie({ tourId: initTourId, concours, onTourSuivantTire
       )}
 
       {erreur && <div className="alert alert-err">{erreur}</div>}
-      {tousJoues && !dernierTour && (
+      {tousJoues && !estDernierTour && tourCourant?.statut === 'ouvert' && (
         <div className="alert alert-ok">
           Tous les scores du tour {tourNumero} sont saisis. Vous pouvez passer au tour suivant.
         </div>
       )}
 
-      <div className="match-list">
-        {rencontres.map(r => {
-          const s = scores[r.id] ?? { a: '', b: '' };
-          const estJouee = r.statut === 'jouee';
-          const isSaving = saving === r.id;
-          const aGagne = estJouee && r.score_a != null && r.score_b != null && r.score_a > r.score_b;
-          const bGagne = estJouee && r.score_a != null && r.score_b != null && r.score_b > r.score_a;
+      <div className="card" style={{ padding: 0 }}>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: 60 }}>Terrain</th>
+                <th>Équipe A</th>
+                <th style={{ width: 110 }} className="td-center">Score</th>
+                <th>Équipe B</th>
+                <th style={{ width: 90 }} className="td-center">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rencontres.map((r, idx) => {
+                const s = scores[r.id] ?? { a: '', b: '' };
+                const estJouee = r.statut === 'jouee';
+                const isSaving = saving === r.id;
+                const aGagne = estJouee && r.score_a != null && r.score_b != null && r.score_a > r.score_b;
+                const bGagne = estJouee && r.score_a != null && r.score_b != null && r.score_b > r.score_a;
+                const keyA = `${r.id}-a`;
+                const keyB = `${r.id}-b`;
 
-          return (
-            <div key={r.id} className="match-card" style={{ flexWrap: 'wrap', gap: 12 }}>
-              <div className="match-terrain">T{r.terrain ?? '?'}</div>
+                return (
+                  <tr key={r.id} className={estJouee ? 'tr-jouee' : ''}>
+                    <td className="td-center">
+                      <span className="terrain-badge">T{r.terrain ?? '?'}</span>
+                    </td>
 
-              <div className="match-teams" style={{ minWidth: 220 }}>
-                <div className={`match-team ${aGagne ? 'winner' : ''}`}>
-                  {r.equipe_a_nom}
-                  {r.equipe_a_joueurs.length > 0 && (
-                    <span className="text-muted" style={{ fontWeight: 400 }}> · {r.equipe_a_joueurs.join(' · ')}</span>
-                  )}
-                </div>
-                <div className="match-vs">vs</div>
-                <div className={`match-team team-b ${bGagne ? 'winner' : ''}`}>
-                  {r.equipe_b_nom}
-                  {r.equipe_b_joueurs.length > 0 && (
-                    <span className="text-muted" style={{ fontWeight: 400 }}> · {r.equipe_b_joueurs.join(' · ')}</span>
-                  )}
-                </div>
-              </div>
+                    <td>
+                      <span className={`td-team ${aGagne ? 'text-ok' : ''}`}>{r.equipe_a_nom}</span>
+                      {r.equipe_a_joueurs.length > 0 && (
+                        <span className="td-joueurs"> · {r.equipe_a_joueurs.join(' · ')}</span>
+                      )}
+                    </td>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-                {estJouee ? (
-                  <>
-                    <div className="match-score">
-                      <span className={`score-val ${aGagne ? 'winner' : ''}`}>{r.score_a}</span>
-                      <span className="score-sep">—</span>
-                      <span className={`score-val ${bGagne ? 'winner' : ''}`}>{r.score_b}</span>
-                    </div>
-                    <button className="btn btn-ghost btn-sm" disabled={isSaving} onClick={() => annuler(r)}>
-                      Modifier
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="score-input">
-                      <input
-                        value={s.a}
-                        onChange={e => setScore(r.id, 'a', e.target.value)}
-                        placeholder="—"
-                        disabled={isSaving}
-                        onKeyDown={e => e.key === 'Enter' && valider(r)}
-                      />
-                      <span className="score-sep">—</span>
-                      <input
-                        value={s.b}
-                        onChange={e => setScore(r.id, 'b', e.target.value)}
-                        placeholder="—"
-                        disabled={isSaving}
-                        onKeyDown={e => e.key === 'Enter' && valider(r)}
-                      />
-                    </div>
-                    <button
-                      className="btn btn-ok btn-sm"
-                      disabled={isSaving || s.a === '' || s.b === ''}
-                      onClick={() => valider(r)}
-                    >
-                      {isSaving ? '…' : 'Valider'}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
+                    <td className="td-center">
+                      {estJouee ? (
+                        <span className="score-display">
+                          <span className={aGagne ? 's-win' : 's-lose'}>{r.score_a}</span>
+                          <span className="s-sep">—</span>
+                          <span className={bGagne ? 's-win' : 's-lose'}>{r.score_b}</span>
+                        </span>
+                      ) : (
+                        <div className="score-inputs" style={{ justifyContent: 'center' }}>
+                          <input
+                            ref={el => { inputRefs.current[keyA] = el; }}
+                            className="input-score"
+                            value={s.a}
+                            onChange={e => setScore(r.id, 'a', e.target.value)}
+                            placeholder="—"
+                            disabled={isSaving}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') valider(r);
+                              if (e.key === 'Tab' && !e.shiftKey) {
+                                // focus B de la même ligne
+                                e.preventDefault();
+                                inputRefs.current[keyB]?.focus();
+                              }
+                            }}
+                          />
+                          <span className="score-dash">—</span>
+                          <input
+                            ref={el => { inputRefs.current[keyB] = el; }}
+                            className="input-score"
+                            value={s.b}
+                            onChange={e => setScore(r.id, 'b', e.target.value)}
+                            placeholder="—"
+                            disabled={isSaving}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') valider(r);
+                              if (e.key === 'Tab' && !e.shiftKey) {
+                                // focus A de la ligne suivante
+                                const nextR = rencontres.find((rr, i) => i === idx + 1 && rr.statut !== 'jouee');
+                                if (nextR) {
+                                  e.preventDefault();
+                                  inputRefs.current[`${nextR.id}-a`]?.focus();
+                                }
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+                    </td>
+
+                    <td>
+                      <span className={`td-team ${bGagne ? 'text-ok' : ''}`}>{r.equipe_b_nom}</span>
+                      {r.equipe_b_joueurs.length > 0 && (
+                        <span className="td-joueurs"> · {r.equipe_b_joueurs.join(' · ')}</span>
+                      )}
+                    </td>
+
+                    <td className="td-center">
+                      {estJouee ? (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={isSaving || tourCourant?.statut === 'clos'}
+                          onClick={() => annuler(r)}
+                        >
+                          Corriger
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-ok btn-sm"
+                          disabled={isSaving || s.a === '' || s.b === ''}
+                          onClick={() => valider(r)}
+                        >
+                          {isSaving ? '…' : 'Valider'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {rencontres.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="td-center text-muted" style={{ padding: '28px 0' }}>
+                    Aucune rencontre pour ce tour.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

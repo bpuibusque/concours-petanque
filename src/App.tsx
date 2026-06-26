@@ -91,16 +91,16 @@ export default function App() {
 
         {concours && (
           <div className="nav-right">
-            <span className="text-sm" style={{ color: 'rgba(255,255,255,.6)' }}>
+            <span className="nav-meta">
               {concours.date} · {FORMAT_LABEL[concours.format_equipe]}
               {toursDrawn > 0 && ` · Tour ${toursDrawn}/${concours.nb_tours}`}
             </span>
             <button
               className="btn btn-ghost btn-sm"
-              style={{ color: 'rgba(255,255,255,.8)', borderColor: 'rgba(255,255,255,.3)' }}
+              style={{ color: 'rgba(255,255,255,.8)', borderColor: 'rgba(255,255,255,.25)', fontSize: 11 }}
               onClick={() => { setConcours(null); setScreen('accueil'); setToursDrawn(0); }}
             >
-              ✕ Fermer
+              Fermer
             </button>
           </div>
         )}

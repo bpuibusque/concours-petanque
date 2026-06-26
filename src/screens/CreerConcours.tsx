@@ -14,6 +14,7 @@ export default function CreerConcours({ onCree, onAnnuler }: Props) {
   const [date, setDate] = useState(today);
   const [format, setFormat] = useState<FormatEquipe>('doublette');
   const [nbTours, setNbTours] = useState(4);
+  const [regleExempte, setRegleExempte] = useState<'score_fictif' | 'score_nul'>('score_fictif');
   const [erreur, setErreur] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -27,9 +28,9 @@ export default function CreerConcours({ onCree, onAnnuler }: Props) {
         nom: nom.trim(),
         date,
         formatEquipe: format,
-        nbTours: nbTours,
+        nbTours,
         antiClubTour1: false,
-        regleExempte: 'score_fictif',
+        regleExempte,
       });
       onCree(c);
     } catch (e) {
@@ -46,7 +47,7 @@ export default function CreerConcours({ onCree, onAnnuler }: Props) {
         <p>Configurez les paramètres avant d'inscrire les équipes.</p>
       </div>
 
-      <div className="card" style={{ maxWidth: 520 }}>
+      <div className="card" style={{ maxWidth: 460 }}>
         {erreur && <div className="alert alert-err">{erreur}</div>}
 
         <form onSubmit={soumettre}>
@@ -76,16 +77,25 @@ export default function CreerConcours({ onCree, onAnnuler }: Props) {
             </div>
           </div>
 
-          <div className="form-group">
-            <label>Format des équipes</label>
-            <select value={format} onChange={e => setFormat(e.target.value as FormatEquipe)}>
-              <option value="tete_a_tete">Tête-à-tête (1 joueur)</option>
-              <option value="doublette">Doublette (2 joueurs)</option>
-              <option value="triplette">Triplette (3 joueurs)</option>
-            </select>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Format</label>
+              <select value={format} onChange={e => setFormat(e.target.value as FormatEquipe)}>
+                <option value="tete_a_tete">Tête-à-tête</option>
+                <option value="doublette">Doublette</option>
+                <option value="triplette">Triplette</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Victoire par exempte</label>
+              <select value={regleExempte} onChange={e => setRegleExempte(e.target.value as 'score_fictif' | 'score_nul')}>
+                <option value="score_fictif">13 — 0 (fictif)</option>
+                <option value="score_nul">0 — 0 (nul)</option>
+              </select>
+            </div>
           </div>
 
-          <div className="flex-row">
+          <div className="flex-row" style={{ marginTop: 4 }}>
             <button type="submit" className="btn btn-primary btn-lg" disabled={loading}>
               {loading ? 'Création…' : 'Créer le concours'}
             </button>

@@ -15,7 +15,7 @@ export default function Recherche() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.listEquipes().then(async eqs => {
+    api.listEquipes().then(async (eqs) => {
       const avec = await Promise.all(
         eqs.map(async (e, i) => ({
           ...e,
@@ -28,9 +28,7 @@ export default function Recherche() {
   }, []);
 
   const filtrees = filtre.length > 0
-    ? equipes.filter(e =>
-        e.joueurs.some(j => j.prenom.toLowerCase().includes(filtre.toLowerCase()))
-      )
+    ? equipes.filter(e => e.joueurs.some(j => j.prenom.toLowerCase().includes(filtre.toLowerCase())))
     : [];
 
   const chargerParcours = useCallback(async (eq: EquipeAvecJoueurs) => {
@@ -46,12 +44,6 @@ export default function Recherche() {
     }
   }, []);
 
-  function victoireIcon(v: boolean | null, exempte: boolean) {
-    if (exempte) return '🎁';
-    if (v === null) return '⏳';
-    return v ? '✅' : '❌';
-  }
-
   const totalV = parcours?.tours.filter(t => t.victoire === true || t.exempte).length ?? 0;
   const totalPour = parcours?.tours.reduce((s, t) => s + (t.score_equipe ?? 0), 0) ?? 0;
   const totalContre = parcours?.tours.reduce((s, t) => s + (t.score_adversaire ?? 0), 0) ?? 0;
@@ -65,8 +57,8 @@ export default function Recherche() {
       </div>
 
       <div className="card">
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Rechercher par prénom(s)</label>
+        <div className="form-group" style={{ marginBottom: filtre && filtrees.length > 0 ? 8 : 0 }}>
+          <label>Rechercher par prénom</label>
           <input
             value={filtre}
             onChange={e => setFiltre(e.target.value)}
@@ -76,7 +68,7 @@ export default function Recherche() {
         </div>
 
         {filtre.length > 0 && filtrees.length > 0 && (
-          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {filtrees.map(e => (
               <button
                 key={e.id}
@@ -101,53 +93,85 @@ export default function Recherche() {
       {loading && <p className="text-muted">Chargement…</p>}
 
       {parcours && parcoursEquipe && !loading && (
-        <div className="card">
-          <div className="flex-between mb-8">
-            <div className="card-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
-              {parcoursEquipe.nom}
-              <span className="text-muted text-sm" style={{ marginLeft: 8, fontWeight: 400 }}>
-                {parcoursEquipe.joueurs.map(j => j.prenom).join(' · ')}
-              </span>
-            </div>
-            <div className="flex-row">
-              <span className="badge badge-ok">{totalV} victoire{totalV > 1 ? 's' : ''}</span>
-              <span className={`badge ${ga >= 0 ? 'badge-ok' : 'badge-err'}`}>
-                GA {ga > 0 ? '+' : ''}{ga}
-              </span>
-              <span className="badge badge-muted">{totalPour} pts marqués</span>
+        <div className="card" style={{ padding: 0 }}>
+          {/* En-tête équipe */}
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--c-border)' }}>
+            <div className="flex-between">
+              <div>
+                <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--c-primary)' }}>
+                  {parcoursEquipe.nom}
+                </span>
+                <span className="td-joueurs" style={{ marginLeft: 8 }}>
+                  {parcoursEquipe.joueurs.map(j => j.prenom).join(' · ')}
+                </span>
+              </div>
+              <div className="flex-row">
+                <span className="badge badge-ok">{totalV} victoire{totalV !== 1 ? 's' : ''}</span>
+                <span className={`badge ${ga >= 0 ? 'badge-ok' : 'badge-err'}`}>
+                  G.A. {ga > 0 ? '+' : ''}{ga}
+                </span>
+                <span className="badge badge-muted">{totalPour} pts marqués</span>
+              </div>
             </div>
           </div>
 
-          <div className="parcours-grid">
-            {parcours.tours.map(t => {
-              const aGagne = t.victoire === true || t.exempte;
-              return (
-                <div key={t.tour_numero} className="parcours-tour">
-                  <div className="parcours-tour-num">Tour {t.tour_numero}</div>
-                  <div className="parcours-victoire">{victoireIcon(t.victoire, t.exempte)}</div>
-                  {t.exempte ? (
-                    <>
-                      <div className="parcours-score" style={{ color: 'var(--c-ok)' }}>13 — 0</div>
-                      <div className="parcours-adversaire">Exempte</div>
-                    </>
-                  ) : t.score_equipe != null ? (
-                    <>
-                      <div className="parcours-score" style={{ color: aGagne ? 'var(--c-ok)' : 'var(--c-err)' }}>
-                        {t.score_equipe} — {t.score_adversaire}
-                      </div>
-                      <div className="parcours-adversaire">vs {t.adversaire_nom ?? '—'}</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="parcours-score text-muted">—</div>
-                      <div className="parcours-adversaire">
-                        {t.adversaire_nom ? `vs ${t.adversaire_nom}` : 'Non joué'}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
+          {/* Table parcours */}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 70 }}>Tour</th>
+                  <th>Adversaire</th>
+                  <th style={{ width: 100 }} className="td-center">Score</th>
+                  <th style={{ width: 90 }} className="td-center">Résultat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parcours.tours.map(t => {
+                  const aGagne = t.victoire === true || t.exempte;
+                  return (
+                    <tr key={t.tour_numero}>
+                      <td style={{ fontWeight: 600, color: 'var(--c-primary)' }}>Tour {t.tour_numero}</td>
+                      <td>
+                        {t.exempte
+                          ? <span className="text-muted" style={{ fontStyle: 'italic' }}>Exempte (bye)</span>
+                          : t.adversaire_nom
+                            ? t.adversaire_nom
+                            : <span className="text-muted">—</span>
+                        }
+                      </td>
+                      <td className="td-center">
+                        {t.exempte ? (
+                          <span className="score-display">
+                            <span className="s-win">13</span>
+                            <span className="s-sep">—</span>
+                            <span className="s-lose">0</span>
+                          </span>
+                        ) : t.score_equipe != null ? (
+                          <span className="score-display">
+                            <span className={aGagne ? 's-win' : 's-lose'}>{t.score_equipe}</span>
+                            <span className="s-sep">—</span>
+                            <span className={!aGagne ? 's-win' : 's-lose'}>{t.score_adversaire}</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="td-center">
+                        {t.exempte
+                          ? <span className="badge badge-blue">Bye</span>
+                          : t.victoire === null
+                            ? <span className="badge badge-muted">À jouer</span>
+                            : t.victoire
+                              ? <span className="badge badge-ok">Victoire</span>
+                              : <span className="badge badge-err">Défaite</span>
+                        }
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

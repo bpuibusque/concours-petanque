@@ -57,6 +57,10 @@ pub struct TirageInfo {
 ///
 /// - Tour 1 : tirage aléatoire (+ contrainte anti-club optionnelle)
 /// - Tours 2-4 : système GG/PP avec anti-doublon
+///
+/// Toutes les écritures en base (clôture du tour précédent, création du tour,
+/// insertion des rencontres, numérotation des équipes) sont atomiques : en cas
+/// d'erreur partielle, la base reste dans son état d'origine.
 pub fn tirer_prochain_tour(
     conn: &Connection,
     concours_id: i64,
@@ -66,12 +70,11 @@ pub fn tirer_prochain_tour(
 
     let tours = db::list_tours(conn, concours_id)?;
 
-    // Vérifier que le tour précédent est terminé, puis le clore
+    // Vérifier que le tour précédent est terminé (lecture avant transaction)
     if let Some(dernier) = tours.last() {
         if !db::tous_resultats_saisis(conn, dernier.id)? {
             return Err(TirageError::ResultatsIncomplets(dernier.numero));
         }
-        db::update_statut_tour(conn, dernier.id, &StatutTour::Clos)?;
     }
 
     let tour_numero = tours.len() as u8 + 1;
@@ -84,10 +87,28 @@ pub fn tirer_prochain_tour(
         return Err(TirageError::NbEquipesInsuffisant(equipes.len()));
     }
 
-    if tour_numero == 1 {
-        tirer_tour_1(conn, &concours, &equipes, tour_numero)
-    } else {
-        tirer_tour_ggpp(conn, &concours, &equipes, tour_numero)
+    // Toutes les écritures dans une transaction atomique
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| -> Result<TirageInfo, TirageError> {
+        if let Some(dernier) = tours.last() {
+            db::update_statut_tour(conn, dernier.id, &StatutTour::Clos)?;
+        }
+        if tour_numero == 1 {
+            tirer_tour_1(conn, &concours, &equipes, tour_numero)
+        } else {
+            tirer_tour_ggpp(conn, &concours, &equipes, tour_numero)
+        }
+    })();
+
+    match result {
+        Ok(info) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(info)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
     }
 }
 
