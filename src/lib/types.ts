@@ -83,7 +83,7 @@ export interface TirageInfo {
   tour_id: number;
   tour_numero: number;
   nb_rencontres: number;
-  exempt_equipe_id: number | null;
+  exempt_equipe_id: number[];
   doublons_forces: [number, number][];
   conflits_club_forces: [number, number][];
 }

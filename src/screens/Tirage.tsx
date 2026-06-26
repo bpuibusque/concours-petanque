@@ -55,7 +55,7 @@ export default function Tirage({ concours, onSaisir }: Props) {
     try {
       const ti: TirageInfo = await api.tirerProchainTour();
       const msgs: string[] = [`Tour ${ti.tour_numero} tiré — ${ti.nb_rencontres} rencontre(s).`];
-      if (ti.exempt_equipe_id) msgs.push(`Équipe exemptée (victoire 13-0 actée).`);
+      if (ti.exempt_equipe_id.length > 0) msgs.push(`${ti.exempt_equipe_id.length} équipe(s) exemptée(s) (victoire actée).`);
       if (ti.doublons_forces.length) msgs.push(`⚠ ${ti.doublons_forces.length} doublon(s) inévitable(s).`);
       setInfo(msgs.join(' '));
       await chargerTours();

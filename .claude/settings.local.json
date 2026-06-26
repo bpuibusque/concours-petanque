@@ -11,7 +11,17 @@
       "Bash(cargo build *)",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(gh repo *)",
+      "Bash(gh auth *)",
+      "Bash(node -e \"console.log\\('canvas' in require\\)\")",
+      "Bash(node -e \"require\\('sharp'\\)\")",
+      "Bash(python3 -c \"from PIL import Image; print\\('PIL ok'\\)\")",
+      "Bash(python3 -c \"import cairosvg; print\\('cairo ok'\\)\")",
+      "Bash(qlmanage *)",
+      "Bash(sips -z 1024 1024 /tmp/icon-source.svg.png --out /Users/baptistepuibusque/Documents/Dev/concours_petanque/icon-1024.png)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

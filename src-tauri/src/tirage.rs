@@ -41,8 +41,8 @@ pub struct TirageInfo {
     pub tour_numero: u8,
     /// Rencontres créées (hors exempte)
     pub nb_rencontres: usize,
-    /// Équipe tirée exempte ce tour, None si effectif pair
-    pub exempt_equipe_id: Option<i64>,
+    /// Équipes tirées exemptes ce tour (une par paquet impair)
+    pub exempt_equipe_id: Vec<i64>,
     /// Paires (id_a, id_b) contraintes à se rencontrer malgré un doublon
     pub doublons_forces: Vec<(i64, i64)>,
     /// Paires (id_a, id_b) du même club contraintes (tour 1 anti-club impossible)
@@ -106,8 +106,9 @@ fn tirer_tour_1(
     let mut ids: Vec<i64> = equipes.iter().map(|e| e.id).collect();
     ids.shuffle(&mut rng);
 
-    // Tirage de l'exempte si impair
-    let (exempt_id, ids_pairs) = extraire_exempt(&ids, &mut rng);
+    // Tirage de l'exempte si impair (tour 1 : personne n'a encore été exempté)
+    let (exempt_id, ids_pairs) =
+        extraire_exempt_prefere(&ids, &mut rng, &HashSet::new());
 
     // Contrainte anti-club : construire l'ensemble des paires interdites
     let interdites_club: HashSet<(i64, i64)> = if concours.anti_club_tour1 {
@@ -124,18 +125,20 @@ fn tirer_tour_1(
     ids_paires_shuffled.shuffle(&mut rng);
     let (paires, conflits_forces) = tirer_paires(&ids_paires_shuffled, &interdites_club);
 
+    let exempts: Vec<i64> = exempt_id.into_iter().collect();
+
     // Persistance
     let tour = creer_tour(conn, concours.id, tour_numero)?;
-    inserer_rencontres(conn, tour.id, &paires, exempt_id, concours)?;
+    inserer_rencontres(conn, tour.id, &paires, &exempts, concours)?;
 
     // Numéroter les équipes (ordre de tirage)
-    numeroter_equipes(conn, &ids_pairs, &paires, exempt_id)?;
+    numeroter_equipes(conn, &ids_pairs, &paires, &exempts)?;
 
     Ok(TirageInfo {
         tour_id: tour.id,
         tour_numero,
         nb_rencontres: paires.len(),
-        exempt_equipe_id: exempt_id,
+        exempt_equipe_id: exempts,
         doublons_forces: vec![],
         conflits_club_forces: conflits_forces,
     })
@@ -153,58 +156,83 @@ fn tirer_tour_ggpp(
 ) -> Result<TirageInfo, TirageError> {
     let mut rng = thread_rng();
 
-    // Construire l'ensemble des rencontres déjà disputées (anti-doublon)
     let deja_joues = deja_joues_par_concours(conn, concours.id)?;
-
-    // Calculer les victoires et le goal average de chaque équipe
     let victoires = victoires_par_equipe(conn, concours.id)?;
     let goal_averages = goal_average_par_equipe(conn, concours.id)?;
+    let deja_exemptes = equipes_deja_exemptes(conn, concours.id)?;
 
-    // Grouper les équipes par nombre de victoires
+    // Grouper par nombre de victoires
     let mut paquets: HashMap<i32, Vec<i64>> = HashMap::new();
     for equipe in equipes {
         let v = *victoires.get(&equipe.id).unwrap_or(&0);
         paquets.entry(v).or_default().push(equipe.id);
     }
 
-    // Trier les niveaux de victoires (du plus élevé au plus faible)
+    // Niveaux triés du plus élevé au plus faible
     let mut niveaux: Vec<i32> = paquets.keys().copied().collect();
     niveaux.sort_unstable_by(|a, b| b.cmp(a));
 
+    // Trier chaque paquet par GA décroissant
+    for ids in paquets.values_mut() {
+        ids.sort_by(|&a, &b| {
+            goal_averages.get(&b).copied().unwrap_or(0)
+                .cmp(&goal_averages.get(&a).copied().unwrap_or(0))
+        });
+    }
+
+    // Rattachement : si un paquet est impair, descendre le dernier élément (plus faible GA)
+    // vers le paquet suivant (niveau inférieur) pour le rendre pair.
+    // Si le total est pair, tous les paquets deviendront pairs sans exempté.
+    // Si le total est impair, seul le dernier paquet restera impair → 1 exempté.
+    for i in 0..niveaux.len().saturating_sub(1) {
+        if paquets[&niveaux[i]].len() % 2 != 0 {
+            let moved = paquets.get_mut(&niveaux[i]).unwrap().pop().unwrap();
+            let next_ids = paquets.get_mut(&niveaux[i + 1]).unwrap();
+            next_ids.push(moved);
+            // Re-trier le paquet cible après ajout
+            next_ids.sort_by(|&a, &b| {
+                goal_averages.get(&b).copied().unwrap_or(0)
+                    .cmp(&goal_averages.get(&a).copied().unwrap_or(0))
+            });
+        }
+    }
+
+    // Tirer les paires de chaque paquet (tous pairs sauf éventuellement le dernier)
     let mut toutes_paires: Vec<(i64, i64)> = Vec::new();
     let mut tous_doublons: Vec<(i64, i64)> = Vec::new();
-    let mut exempt_global: Option<i64> = None;
+    let mut exempts_global: Vec<i64> = Vec::new();
 
     for niveau in &niveaux {
-        let ids = paquets.get_mut(niveau).unwrap();
-
-        // Trier par goal average décroissant : le meilleur affronte le 2e, le pire affronte le 2e pire
-        ids.sort_by(|&a, &b| {
-            let ga_b = goal_averages.get(&b).copied().unwrap_or(0);
-            let ga_a = goal_averages.get(&a).copied().unwrap_or(0);
-            ga_b.cmp(&ga_a)
-        });
-
-        let (exempt_id, ids_pairs) = extraire_exempt(ids, &mut rng);
-        if let Some(e) = exempt_id {
-            // Un seul exempte par tour au total
-            exempt_global = Some(e);
+        let ids = paquets.get(niveau).unwrap();
+        if ids.is_empty() {
+            continue;
         }
-
-        let (paires, doublons) = tirer_paires(&ids_pairs, &deja_joues);
-        toutes_paires.extend_from_slice(&paires);
-        tous_doublons.extend_from_slice(&doublons);
+        if ids.len() % 2 != 0 {
+            // Ne peut arriver qu'au dernier paquet quand le total d'équipes est impair
+            let (exempt_id, ids_pairs) =
+                extraire_exempt_prefere(ids, &mut rng, &deja_exemptes);
+            if let Some(e) = exempt_id {
+                exempts_global.push(e);
+            }
+            let (paires, doublons) = tirer_paires(&ids_pairs, &deja_joues);
+            toutes_paires.extend(paires);
+            tous_doublons.extend(doublons);
+        } else {
+            let (paires, doublons) = tirer_paires(ids, &deja_joues);
+            toutes_paires.extend(paires);
+            tous_doublons.extend(doublons);
+        }
     }
 
     // Persistance
     let tour = creer_tour(conn, concours.id, tour_numero)?;
-    inserer_rencontres(conn, tour.id, &toutes_paires, exempt_global, concours)?;
+    inserer_rencontres(conn, tour.id, &toutes_paires, &exempts_global, concours)?;
 
     Ok(TirageInfo {
         tour_id: tour.id,
         tour_numero,
         nb_rencontres: toutes_paires.len(),
-        exempt_equipe_id: exempt_global,
+        exempt_equipe_id: exempts_global,
         doublons_forces: tous_doublons,
         conflits_club_forces: vec![],
     })
@@ -318,21 +346,50 @@ fn sans_indices(v: &[i64], i: usize, j: usize) -> Vec<i64> {
         .collect()
 }
 
-/// Retire un exempte au hasard si la liste est impaire.
-/// Retourne (Some(exempt_id), liste_paire) ou (None, liste_inchangée).
-fn extraire_exempt(ids: &[i64], rng: &mut impl rand::Rng) -> (Option<i64>, Vec<i64>) {
+/// Retire un exempte si la liste est impaire, en préférant les équipes pas encore exemptées.
+fn extraire_exempt_prefere(
+    ids: &[i64],
+    rng: &mut impl rand::Rng,
+    deja_exemptes: &HashSet<i64>,
+) -> (Option<i64>, Vec<i64>) {
     if ids.len() % 2 == 0 {
         return (None, ids.to_vec());
     }
-    let idx = rng.gen_range(0..ids.len());
+    let candidats: Vec<usize> = ids
+        .iter()
+        .enumerate()
+        .filter(|(_, &id)| !deja_exemptes.contains(&id))
+        .map(|(i, _)| i)
+        .collect();
+    let idx = if !candidats.is_empty() {
+        candidats[rng.gen_range(0..candidats.len())]
+    } else {
+        rng.gen_range(0..ids.len())
+    };
     let exempt = ids[idx];
-    let restants: Vec<i64> = ids
+    let restants = ids
         .iter()
         .enumerate()
         .filter(|&(i, _)| i != idx)
         .map(|(_, &id)| id)
         .collect();
     (Some(exempt), restants)
+}
+
+/// Retourne les ids des équipes déjà exemptées dans ce concours.
+fn equipes_deja_exemptes(
+    conn: &Connection,
+    concours_id: i64,
+) -> Result<HashSet<i64>, TirageError> {
+    let mut stmt = conn.prepare(
+        "SELECT r.equipe_a_id FROM rencontres r
+         JOIN tours t ON t.id = r.tour_id
+         WHERE t.concours_id = ?1 AND r.exempte = 1",
+    )?;
+    let ids = stmt
+        .query_map([concours_id], |row| row.get::<_, i64>(0))?
+        .collect::<Result<HashSet<_>, _>>()?;
+    Ok(ids)
 }
 
 // ---------------------------------------------------------------------------
@@ -490,7 +547,7 @@ fn inserer_rencontres(
     conn: &Connection,
     tour_id: i64,
     paires: &[(i64, i64)],
-    exempt_id: Option<i64>,
+    exempt_ids: &[i64],
     concours: &Concours,
 ) -> Result<(), TirageError> {
     // Rencontres normales
@@ -509,8 +566,8 @@ fn inserer_rencontres(
         db::insert_rencontre(conn, &r)?;
     }
 
-    // Rencontre exempte
-    if let Some(exempt) = exempt_id {
+    // Rencontres exemptes (une par paquet impair)
+    for &exempt in exempt_ids {
         let (score_a, score_b) = match concours.regle_exempte.as_str() {
             "score_fictif" => (Some(13), Some(0)),
             _ => (Some(0), Some(0)), // score_nul
@@ -537,7 +594,7 @@ fn numeroter_equipes(
     conn: &Connection,
     _ids_pairs: &[i64],
     paires: &[(i64, i64)],
-    exempt_id: Option<i64>,
+    exempt_ids: &[i64],
 ) -> Result<(), TirageError> {
     let mut numero = 1i64;
     for &(a, b) in paires {
@@ -552,11 +609,12 @@ fn numeroter_equipes(
         )?;
         numero += 1;
     }
-    if let Some(e) = exempt_id {
+    for &e in exempt_ids {
         conn.execute(
             "UPDATE equipes SET numero_tirage = ?1 WHERE id = ?2",
             rusqlite::params![numero, e],
         )?;
+        numero += 1;
     }
     Ok(())
 }
@@ -613,7 +671,7 @@ mod tests {
     fn extraire_exempt_impair() {
         let mut rng = rand::thread_rng();
         let ids = vec![1i64, 2, 3, 4, 5];
-        let (exempt, restants) = extraire_exempt(&ids, &mut rng);
+        let (exempt, restants) = extraire_exempt_prefere(&ids, &mut rng, &HashSet::new());
         assert!(exempt.is_some());
         assert_eq!(restants.len(), 4);
         let ex = exempt.unwrap();
@@ -624,7 +682,7 @@ mod tests {
     fn extraire_exempt_pair() {
         let mut rng = rand::thread_rng();
         let ids = vec![1i64, 2, 3, 4];
-        let (exempt, restants) = extraire_exempt(&ids, &mut rng);
+        let (exempt, restants) = extraire_exempt_prefere(&ids, &mut rng, &HashSet::new());
         assert!(exempt.is_none());
         assert_eq!(restants.len(), 4);
     }
