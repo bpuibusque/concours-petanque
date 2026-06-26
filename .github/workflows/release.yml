@@ -53,6 +53,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signature ad-hoc macOS : évite l'erreur "endommagé" de Gatekeeper
+          # sans nécessiter un compte Apple Developer payant
+          APPLE_SIGNING_IDENTITY: '-'
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Concours Pétanque ${{ github.ref_name }}
@@ -65,7 +68,17 @@ jobs:
             | macOS Apple Silicon (M1/M2/M3/M4) | `.dmg` `aarch64` |
             | macOS Intel | `.dmg` `x86_64` |
 
-            > macOS : si l'app est bloquée, faites clic droit → Ouvrir → Ouvrir quand même.
+            ### macOS — premier lancement
+
+            macOS bloque les apps non signées par Apple. Pour ouvrir l'app :
+
+            **Option A** — Clic droit sur l'app → **Ouvrir** → **Ouvrir quand même**
+
+            **Option B** — Dans le Terminal :
+            ```bash
+            xattr -cr "/Applications/Concours Pétanque.app"
+            ```
+            Puis double-cliquez normalement.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

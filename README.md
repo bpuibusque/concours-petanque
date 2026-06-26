@@ -17,7 +17,9 @@ Application desktop de gestion de concours de pétanque en 4 parties, système *
 
 Double-cliquez sur le fichier téléchargé et suivez l'installation. Aucune dépendance supplémentaire requise.
 
-> **macOS** : si macOS bloque l'application ("développeur non identifié"), faites clic droit → Ouvrir → Ouvrir quand même.
+> **macOS — premier lancement** : macOS bloque les apps non signées par Apple.
+> - **Option A** : clic droit sur l'app → **Ouvrir** → **Ouvrir quand même**
+> - **Option B** : ouvrir le Terminal et taper `xattr -cr "/Applications/Concours Pétanque.app"` puis relancer l'app normalement
 
 ---
 
