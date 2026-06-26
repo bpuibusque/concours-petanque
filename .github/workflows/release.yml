@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,10 +13,13 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
+            target: x86_64-pc-windows-msvc
             args: '--target x86_64-pc-windows-msvc'
           - platform: macos-latest
+            target: aarch64-apple-darwin
             args: '--target aarch64-apple-darwin'
           - platform: macos-latest
+            target: x86_64-apple-darwin
             args: '--target x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
@@ -26,18 +30,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: lts/*
+          cache: npm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: src-tauri -> target
 
       - name: Install frontend deps
         run: npm ci
@@ -48,13 +52,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Concours Pétanque ${{ github.ref_name }}'
+          releaseName: Concours Pétanque ${{ github.ref_name }}
           releaseBody: |
-            ## Installation
+            ## Téléchargement
 
-            - **Windows** : téléchargez et exécutez le fichier `.msi`
-            - **macOS Apple Silicon (M1/M2/M3)** : téléchargez le `.dmg` `aarch64`
-            - **macOS Intel** : téléchargez le `.dmg` `x86_64`
+            | Système | Fichier |
+            |---|---|
+            | Windows 10/11 | `.msi` |
+            | macOS Apple Silicon (M1/M2/M3/M4) | `.dmg` `aarch64` |
+            | macOS Intel | `.dmg` `x86_64` |
+
+            > macOS : si l'app est bloquée, faites clic droit → Ouvrir → Ouvrir quand même.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
